@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useState } from "react";
+import { use, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useCellarStore } from "@/lib/store";
@@ -17,15 +17,27 @@ export default function WineDetailPage({ params }: { params: Promise<{ id: strin
   const wine = item ? getWineById(item.wineId) : null;
   const loc = item ? locations.find((l) => l.id === item.storageLocationId) : null;
 
+  // Snapshot wine/item so they survive the inventory update during "drink last bottle"
+  const wineSnapshot = useRef(wine);
+  const itemSnapshot = useRef(item);
+  if (wine) wineSnapshot.current = wine;
+  if (item) itemSnapshot.current = item;
+
   const [showDrink, setShowDrink] = useState(false);
   const [drinkQty, setDrinkQty] = useState(1);
   const [drinkNote, setDrinkNote] = useState("");
   const [showTasting, setShowTasting] = useState(false);
   const [rating, setRating] = useState(4);
   const [tastingText, setTastingText] = useState("");
-  const [success, setSuccess] = useState<"drink" | "tasting" | null>(null);
+  const [showRemove, setShowRemove] = useState(false);
+  const [success, setSuccess] = useState<"drink" | "tasting" | "remove" | null>(null);
+  const [successQty, setSuccessQty] = useState(1);
 
-  if (!item || !wine) {
+  // Use snapshots when item/wine might be gone (after last bottle drunk/removed)
+  const displayItem = item ?? itemSnapshot.current;
+  const displayWine = wine ?? wineSnapshot.current;
+
+  if (!displayItem || !displayWine) {
     return (
       <div className="max-w-lg mx-auto px-4 py-20 text-center">
         <p className="text-4xl mb-3">🍷</p>
@@ -37,24 +49,34 @@ export default function WineDetailPage({ params }: { params: Promise<{ id: strin
     );
   }
 
-  const status = getDrinkingStatus(wine);
+  const status = getDrinkingStatus(displayWine);
   const year = new Date().getFullYear();
-  const peakProgress = Math.min(100, Math.max(0,
-    ((year - wine.drinkFrom) / (wine.drinkUntil - wine.drinkFrom)) * 100
-  ));
+  const range = displayWine.drinkUntil - displayWine.drinkFrom;
+  const peakProgress = range > 0
+    ? Math.min(100, Math.max(0, ((year - displayWine.drinkFrom) / range) * 100))
+    : 50;
 
   function handleDrink() {
-    drinkWine(item!.id, drinkQty, drinkNote || undefined);
+    const qty = drinkQty;
+    setSuccessQty(qty);
+    drinkWine(displayItem!.id, qty, drinkNote || undefined);
     setSuccess("drink");
     setShowDrink(false);
     setTimeout(() => { setSuccess(null); router.push("/keller"); }, 1500);
   }
 
   function handleTasting() {
-    addTastingNote(wine!.id, rating, tastingText);
+    addTastingNote(displayWine!.id, rating, tastingText);
     setSuccess("tasting");
     setShowTasting(false);
     setTimeout(() => setSuccess(null), 1500);
+  }
+
+  function handleRemove() {
+    removeWine(displayItem!.id, displayItem!.quantity);
+    setSuccess("remove");
+    setShowRemove(false);
+    setTimeout(() => { setSuccess(null); router.push("/keller"); }, 1500);
   }
 
   return (
@@ -63,9 +85,13 @@ export default function WineDetailPage({ params }: { params: Promise<{ id: strin
       {success && (
         <div
           className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-2xl shadow-lg animate-fade-up"
-          style={{ background: "#6B1A2A", color: "white" }}
+          style={{ background: success === "remove" ? "#802020" : "#6B1A2A", color: "white", whiteSpace: "nowrap" }}
         >
-          {success === "drink" ? "1 Flasche getrunken 🍷" : "Tasting Note gespeichert ✓"}
+          {success === "drink"
+            ? `${successQty} Flasche${successQty > 1 ? "n" : ""} getrunken 🍷`
+            : success === "tasting"
+            ? "Tasting Note gespeichert ✓"
+            : "Wein aus Keller entfernt"}
         </div>
       )}
 
@@ -97,20 +123,20 @@ export default function WineDetailPage({ params }: { params: Promise<{ id: strin
                     className="text-xs px-2.5 py-0.5 rounded-full font-medium"
                     style={{ background: "rgba(255,255,255,0.2)", color: "white" }}
                   >
-                    {wine.type}
+                    {displayWine.type}
                   </span>
                   <span className="text-xs" style={{ color: "rgba(255,255,255,0.7)" }}>
-                    {wine.vintage}
+                    {displayWine.vintage}
                   </span>
                 </div>
                 <h1 className="text-2xl font-bold leading-tight" style={{ color: "white" }}>
-                  {wine.name}
+                  {displayWine.name}
                 </h1>
                 <p className="text-sm mt-1" style={{ color: "rgba(255,255,255,0.75)" }}>
-                  {wine.producer}
+                  {displayWine.producer}
                 </p>
                 <p className="text-xs mt-0.5" style={{ color: "rgba(255,255,255,0.55)" }}>
-                  {wine.region}, {wine.country}
+                  {displayWine.region}, {displayWine.country}
                 </p>
               </div>
               <div className="text-right flex-shrink-0">
@@ -118,7 +144,7 @@ export default function WineDetailPage({ params }: { params: Promise<{ id: strin
                   className="text-5xl font-bold"
                   style={{ color: "white", fontFamily: "Georgia, serif", lineHeight: 1 }}
                 >
-                  {item.quantity}
+                  {displayItem.quantity}
                 </p>
                 <p className="text-xs mt-1" style={{ color: "rgba(255,255,255,0.6)" }}>
                   Flaschen
@@ -150,9 +176,9 @@ export default function WineDetailPage({ params }: { params: Promise<{ id: strin
               <DrinkStatusBadge status={status} />
             </div>
             <div className="flex items-center justify-between text-xs mb-2" style={{ color: "#9B8E7E" }}>
-              <span>{wine.drinkFrom}</span>
-              <span>Peak {wine.drinkPeak}</span>
-              <span>{wine.drinkUntil}</span>
+              <span>{displayWine.drinkFrom}</span>
+              <span>Peak {displayWine.drinkPeak}</span>
+              <span>{displayWine.drinkUntil}</span>
             </div>
             <div className="w-full rounded-full h-2" style={{ background: "#EDE8DF" }}>
               <div
@@ -163,9 +189,9 @@ export default function WineDetailPage({ params }: { params: Promise<{ id: strin
                 }}
               />
             </div>
-            {wine.description && (
+            {displayWine.description && (
               <p className="text-xs mt-3 leading-relaxed" style={{ color: "#6B5E4E" }}>
-                {wine.description}
+                {displayWine.description}
               </p>
             )}
           </div>
@@ -173,34 +199,36 @@ export default function WineDetailPage({ params }: { params: Promise<{ id: strin
 
         {/* Details grid */}
         <div className="px-4 mb-4 grid grid-cols-2 gap-3">
-          <InfoCard label="Trauben" value={wine.grapes.join(", ")} />
-          <InfoCard label="Alkohol" value={`${wine.alcohol}%`} />
-          <InfoCard label="Region" value={`${wine.region}`} />
-          <InfoCard label="Kaufpreis" value={item.purchasePrice ? `CHF ${item.purchasePrice}` : `ca. CHF ${wine.referencePrice}`} />
+          <InfoCard label="Trauben" value={displayWine.grapes.join(", ") || "—"} />
+          <InfoCard label="Alkohol" value={`${displayWine.alcohol}%`} />
+          <InfoCard label="Region" value={displayWine.region} />
+          <InfoCard label="Kaufpreis" value={displayItem.purchasePrice ? `CHF ${displayItem.purchasePrice}` : `ca. CHF ${displayWine.referencePrice}`} />
         </div>
 
         {/* Food Pairing */}
-        <div className="px-4 mb-4">
-          <div
-            className="p-4 rounded-2xl border"
-            style={{ background: "white", borderColor: "#EDE8DF" }}
-          >
-            <p className="font-semibold text-sm mb-3" style={{ color: "#1A1208" }}>
-              Passt hervorragend zu
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {wine.pairing.map((p) => (
-                <span
-                  key={p}
-                  className="px-3 py-1.5 rounded-full text-xs font-medium"
-                  style={{ background: "#B5862B18", color: "#8B6520" }}
-                >
-                  {p}
-                </span>
-              ))}
+        {displayWine.pairing.length > 0 && (
+          <div className="px-4 mb-4">
+            <div
+              className="p-4 rounded-2xl border"
+              style={{ background: "white", borderColor: "#EDE8DF" }}
+            >
+              <p className="font-semibold text-sm mb-3" style={{ color: "#1A1208" }}>
+                Passt hervorragend zu
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {displayWine.pairing.map((p) => (
+                  <span
+                    key={p}
+                    className="px-3 py-1.5 rounded-full text-xs font-medium"
+                    style={{ background: "#B5862B18", color: "#8B6520" }}
+                  >
+                    {p}
+                  </span>
+                ))}
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         {/* Actions */}
         <div className="px-4 pb-32 space-y-3">
@@ -217,6 +245,13 @@ export default function WineDetailPage({ params }: { params: Promise<{ id: strin
             style={{ background: "transparent", color: "#6B1A2A", borderColor: "#D4C9B8" }}
           >
             Tasting Note hinzufügen
+          </button>
+          <button
+            onClick={() => setShowRemove(true)}
+            className="w-full py-3.5 rounded-2xl font-medium text-sm border"
+            style={{ background: "transparent", color: "#9B8E7E", borderColor: "#EDE8DF" }}
+          >
+            Aus Keller entfernen
           </button>
         </div>
       </div>
@@ -242,11 +277,11 @@ export default function WineDetailPage({ params }: { params: Promise<{ id: strin
                 {drinkQty}
               </span>
               <button
-                onClick={() => setDrinkQty(Math.min(item.quantity, drinkQty + 1))}
+                onClick={() => setDrinkQty(Math.min(displayItem.quantity, drinkQty + 1))}
                 className="w-11 h-11 rounded-full text-xl font-bold"
                 style={{ background: "#EDE8DF", color: "#6B1A2A" }}
               >+</button>
-              <span className="text-sm" style={{ color: "#9B8E7E" }}>von {item.quantity}</span>
+              <span className="text-sm" style={{ color: "#9B8E7E" }}>von {displayItem.quantity}</span>
             </div>
             <textarea
               value={drinkNote}
@@ -302,6 +337,38 @@ export default function WineDetailPage({ params }: { params: Promise<{ id: strin
             >
               Speichern
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Remove Confirmation Modal */}
+      {showRemove && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center">
+          <div className="absolute inset-0 bg-black/40 animate-fade-in" onClick={() => setShowRemove(false)} />
+          <div
+            className="relative w-full max-w-lg animate-slide-up rounded-t-2xl p-5"
+            style={{ background: "#F5F0E8" }}
+          >
+            <h3 className="text-lg font-bold mb-2" style={{ color: "#1A1208" }}>Wein entfernen?</h3>
+            <p className="text-sm mb-6" style={{ color: "#6B5E4E" }}>
+              {displayItem.quantity} Flasche{displayItem.quantity > 1 ? "n" : ""} <strong style={{ color: "#1A1208" }}>{displayWine.name} {displayWine.vintage}</strong> werden aus dem Keller entfernt.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowRemove(false)}
+                className="flex-1 py-3.5 rounded-2xl font-medium text-sm border"
+                style={{ background: "transparent", color: "#6B5E4E", borderColor: "#D4C9B8" }}
+              >
+                Abbrechen
+              </button>
+              <button
+                onClick={handleRemove}
+                className="flex-1 py-3.5 rounded-2xl font-semibold text-sm"
+                style={{ background: "#802020", color: "white" }}
+              >
+                Entfernen
+              </button>
+            </div>
           </div>
         </div>
       )}
