@@ -9,7 +9,7 @@ import WineTypeBadge from "@/components/WineTypeBadge";
 import DrinkStatusBadge from "@/components/DrinkStatusBadge";
 
 export default function ScanPage() {
-  const [mode, setMode] = useState<"camera" | "manual">("camera");
+  const [mode, setMode] = useState<"camera" | "manual">("manual");
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Wine[]>([]);
   const [selected, setSelected] = useState<Wine | null>(null);
