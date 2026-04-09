@@ -12,6 +12,9 @@ export default function ScanPage() {
   const [mode, setMode] = useState<"camera" | "manual">("manual");
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Wine[]>([]);
+  const [onlineResults, setOnlineResults] = useState<Wine[]>([]);
+  const [loadingOnline, setLoadingOnline] = useState(false);
+  const onlineTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [selected, setSelected] = useState<Wine | null>(null);
   const [scanMsg, setScanMsg] = useState("");
   const [scanning, setScanning] = useState(false);
@@ -104,7 +107,32 @@ export default function ScanPage() {
 
   function handleSearch(q: string) {
     setQuery(q);
-    setResults(q.trim().length >= 2 ? searchWines(q) : []);
+    const trimmed = q.trim();
+    setResults(trimmed.length >= 2 ? searchWines(q) : []);
+
+    // Reset online results on every keystroke
+    setOnlineResults([]);
+    if (onlineTimerRef.current) clearTimeout(onlineTimerRef.current);
+
+    if (trimmed.length >= 2) {
+      setLoadingOnline(true);
+      onlineTimerRef.current = setTimeout(async () => {
+        try {
+          const res = await fetch(`/api/wines/search?q=${encodeURIComponent(trimmed)}`);
+          const data: Wine[] = await res.json();
+          // Deduplicate against local results by name similarity
+          const localNames = new Set(results.map((w) => w.name.toLowerCase()));
+          const fresh = data.filter((w) => !localNames.has(w.name.toLowerCase()));
+          setOnlineResults(fresh);
+        } catch {
+          // silently ignore – local results still show
+        } finally {
+          setLoadingOnline(false);
+        }
+      }, 500);
+    } else {
+      setLoadingOnline(false);
+    }
   }
 
   return (
@@ -238,25 +266,55 @@ export default function ScanPage() {
             </div>
 
             <div className="space-y-2">
-              <p className="text-xs mb-2 font-medium" style={{ color: "#9B8E7E" }}>
-                {query.trim().length >= 2 ? `${results.length} Treffer` : "Alle Weine im Katalog"}
-              </p>
               {query.trim().length >= 2 ? (
-                results.length > 0 ? (
-                  results.map((wine) => (
-                    <WineResultCard key={wine.id} wine={wine} onSelect={() => setSelected(wine)} />
-                  ))
-                ) : (
-                  <div className="text-center py-12">
-                    <p className="text-4xl mb-3">🔍</p>
-                    <p className="font-medium" style={{ color: "#1A1208" }}>Kein Wein gefunden</p>
-                    <p className="text-sm mt-1" style={{ color: "#6B5E4E" }}>Anderen Namen oder Produzenten versuchen</p>
-                  </div>
-                )
+                <>
+                  {/* Local catalog results */}
+                  {results.length > 0 && (
+                    <>
+                      <p className="text-xs font-medium pb-1" style={{ color: "#9B8E7E" }}>
+                        Lokaler Katalog · {results.length} Treffer
+                      </p>
+                      {results.map((wine) => (
+                        <WineResultCard key={wine.id} wine={wine} onSelect={() => setSelected(wine)} />
+                      ))}
+                    </>
+                  )}
+
+                  {/* Online library results */}
+                  {loadingOnline && (
+                    <div className="flex items-center gap-2 py-3 px-1">
+                      <div className="w-4 h-4 rounded-full border-2 animate-spin flex-shrink-0"
+                        style={{ borderColor: "#D4C9B8", borderTopColor: "#B5862B" }} />
+                      <p className="text-xs" style={{ color: "#9B8E7E" }}>Online-Weinbibliothek wird durchsucht…</p>
+                    </div>
+                  )}
+
+                  {!loadingOnline && onlineResults.length > 0 && (
+                    <>
+                      <p className="text-xs font-medium pt-2 pb-1" style={{ color: "#9B8E7E" }}>
+                        Online-Bibliothek · {onlineResults.length} Treffer
+                      </p>
+                      {onlineResults.map((wine) => (
+                        <WineResultCard key={wine.id} wine={wine} onSelect={() => setSelected(wine)} />
+                      ))}
+                    </>
+                  )}
+
+                  {!loadingOnline && results.length === 0 && onlineResults.length === 0 && (
+                    <div className="text-center py-12">
+                      <p className="text-4xl mb-3">🔍</p>
+                      <p className="font-medium" style={{ color: "#1A1208" }}>Kein Wein gefunden</p>
+                      <p className="text-sm mt-1" style={{ color: "#6B5E4E" }}>Anderen Namen oder Produzenten versuchen</p>
+                    </div>
+                  )}
+                </>
               ) : (
-                WINE_CATALOG.map((wine) => (
-                  <WineResultCard key={wine.id} wine={wine} onSelect={() => setSelected(wine)} />
-                ))
+                <>
+                  <p className="text-xs mb-2 font-medium" style={{ color: "#9B8E7E" }}>Alle Weine im Katalog</p>
+                  {WINE_CATALOG.map((wine) => (
+                    <WineResultCard key={wine.id} wine={wine} onSelect={() => setSelected(wine)} />
+                  ))}
+                </>
               )}
             </div>
           </div>
