@@ -358,15 +358,39 @@ export const WINE_CATALOG: Wine[] = [
 export function searchWines(query: string): Wine[] {
   const q = query.toLowerCase().trim();
   if (!q) return [];
-  return WINE_CATALOG.filter(
-    (w) =>
-      w.name.toLowerCase().includes(q) ||
-      w.producer.toLowerCase().includes(q) ||
-      w.region.toLowerCase().includes(q) ||
-      w.country.toLowerCase().includes(q) ||
-      w.grapes.some((g) => g.toLowerCase().includes(q)) ||
-      String(w.vintage).includes(q)
-  ).slice(0, 10);
+
+  const tokens = q.split(/\s+/).filter(Boolean);
+
+  const scored = WINE_CATALOG.map((wine) => {
+    const fields = [
+      { value: wine.name.toLowerCase(), weight: 4 },
+      { value: wine.producer.toLowerCase(), weight: 3 },
+      { value: wine.grapes.join(" ").toLowerCase(), weight: 2 },
+      { value: wine.region.toLowerCase(), weight: 2 },
+      { value: String(wine.vintage), weight: 2 },
+      { value: wine.country.toLowerCase(), weight: 1 },
+    ];
+
+    let score = 0;
+
+    // Bonus for exact phrase match
+    for (const field of fields) {
+      if (field.value.includes(q)) score += field.weight * 3;
+    }
+
+    // Score each token individually across all fields
+    for (const token of tokens) {
+      for (const field of fields) {
+        if (field.value.includes(token)) score += field.weight;
+      }
+    }
+
+    return { wine, score };
+  }).filter(({ score }) => score > 0);
+
+  scored.sort((a, b) => b.score - a.score);
+
+  return scored.slice(0, 10).map(({ wine }) => wine);
 }
 
 export function findByBarcode(barcode: string): Wine | undefined {
