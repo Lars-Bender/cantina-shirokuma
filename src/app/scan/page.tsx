@@ -237,30 +237,28 @@ export default function ScanPage() {
               )}
             </div>
 
-            {results.length > 0 && (
-              <div className="space-y-2 animate-fade-up">
-                {results.map((wine) => (
+            <div className="space-y-2">
+              <p className="text-xs mb-2 font-medium" style={{ color: "#9B8E7E" }}>
+                {query.trim().length >= 2 ? `${results.length} Treffer` : "Alle Weine im Katalog"}
+              </p>
+              {query.trim().length >= 2 ? (
+                results.length > 0 ? (
+                  results.map((wine) => (
+                    <WineResultCard key={wine.id} wine={wine} onSelect={() => setSelected(wine)} />
+                  ))
+                ) : (
+                  <div className="text-center py-12">
+                    <p className="text-4xl mb-3">🔍</p>
+                    <p className="font-medium" style={{ color: "#1A1208" }}>Kein Wein gefunden</p>
+                    <p className="text-sm mt-1" style={{ color: "#6B5E4E" }}>Anderen Namen oder Produzenten versuchen</p>
+                  </div>
+                )
+              ) : (
+                WINE_CATALOG.map((wine) => (
                   <WineResultCard key={wine.id} wine={wine} onSelect={() => setSelected(wine)} />
-                ))}
-              </div>
-            )}
-
-            {query.length >= 2 && results.length === 0 && (
-              <div className="text-center py-12">
-                <p className="text-4xl mb-3">🔍</p>
-                <p className="font-medium" style={{ color: "#1A1208" }}>Kein Wein gefunden</p>
-                <p className="text-sm mt-1" style={{ color: "#6B5E4E" }}>Anderen Namen oder Produzenten versuchen</p>
-              </div>
-            )}
-
-            {query.length === 0 && (
-              <div className="space-y-2">
-                <p className="text-xs mb-2 font-medium" style={{ color: "#9B8E7E" }}>Alle Weine im Katalog</p>
-                {WINE_CATALOG.slice(0, 8).map((wine) => (
-                  <WineResultCard key={wine.id} wine={wine} onSelect={() => setSelected(wine)} />
-                ))}
-              </div>
-            )}
+                ))
+              )}
+            </div>
           </div>
         )}
       </div>
